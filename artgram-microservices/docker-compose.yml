@@ -1,0 +1,160 @@
+version: '3.8'
+
+services:
+  # API Gateway - routes all traffic to appropriate services
+  nginx:
+    image: nginx:alpine
+    container_name: artgram-api-gateway
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - user-service
+      - artwork-service
+      - explore-service
+      - interaction-service
+      - notification-service
+    networks:
+      - artgram-network
+
+  # User Service - handles authentication, profiles, permissions
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    ports:
+      - "8001:8000"
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=your-secret-key-here-change-in-production
+      - ALLOWED_HOSTS=localhost,127.0.0.1,user-service
+    volumes:
+      - ./services/user-service:/app
+      - user-service-db:/app/data
+    command: python manage.py runserver 0.0.0.0:8000
+    networks:
+      - artgram-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/users/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Artwork Service - handles CRUD, image uploads, categories
+  artwork-service:
+    build:
+      context: ./services/artwork-service
+      dockerfile: Dockerfile
+    container_name: artwork-service
+    ports:
+      - "8002:8000"
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=your-secret-key-here-change-in-production
+      - ALLOWED_HOSTS=localhost,127.0.0.1,artwork-service
+    volumes:
+      - ./services/artwork-service:/app
+      - artwork-service-db:/app/data
+      - artwork-media:/app/media
+    command: python manage.py runserver 0.0.0.0:8000
+    networks:
+      - artgram-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/artworks/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Explore Service - handles gallery browsing and discovery
+  explore-service:
+    build:
+      context: ./services/explore-service
+      dockerfile: Dockerfile
+    container_name: explore-service
+    ports:
+      - "8003:8000"
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=your-secret-key-here-change-in-production
+      - ALLOWED_HOSTS=localhost,127.0.0.1,explore-service
+      - ARTWORK_SERVICE_URL=http://artwork-service:8000
+    volumes:
+      - ./services/explore-service:/app
+      - explore-service-db:/app/data
+    command: python manage.py runserver 0.0.0.0:8000
+    networks:
+      - artgram-network
+    depends_on:
+      artwork-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/explore/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Interaction Service - handles likes, views, comments
+  interaction-service:
+    build:
+      context: ./services/interaction-service
+      dockerfile: Dockerfile
+    container_name: interaction-service
+    ports:
+      - "8004:8000"
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=your-secret-key-here-change-in-production
+      - ALLOWED_HOSTS=localhost,127.0.0.1,interaction-service
+      - ARTWORK_SERVICE_URL=http://artwork-service:8000
+    volumes:
+      - ./services/interaction-service:/app
+      - interaction-service-db:/app/data
+    command: python manage.py runserver 0.0.0.0:8000
+    networks:
+      - artgram-network
+    depends_on:
+      artwork-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/interactions/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Notification Service - handles user alerts
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    ports:
+      - "8005:8000"
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=your-secret-key-here-change-in-production
+      - ALLOWED_HOSTS=localhost,127.0.0.1,notification-service
+    volumes:
+      - ./services/notification-service:/app
+      - notification-service-db:/app/data
+    command: python manage.py runserver 0.0.0.0:8000
+    networks:
+      - artgram-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/notifications/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  user-service-db:
+  artwork-service-db:
+  explore-service-db:
+  interaction-service-db:
+  notification-service-db:
+  artwork-media:
+
+networks:
+  artgram-network:
+    driver: bridge
